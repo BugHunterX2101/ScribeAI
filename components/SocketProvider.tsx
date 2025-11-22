@@ -26,34 +26,47 @@ export default function SocketProvider({ children }: { children: React.ReactNode
   const [isConnected, setIsConnected] = useState(false)
 
   useEffect(() => {
-    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3002'
+    // CRITICAL FIX: Connect to the correct server port with proper options
+    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001'
     console.log('🔗 Socket connecting to:', socketUrl)
     
     const socketInstance = io(socketUrl, {
+      transports: ['websocket', 'polling'], // Try websocket first, fallback to polling
       autoConnect: true,
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: 5
+      reconnectionAttempts: 5,
+      timeout: 10000,
+      forceNew: true
     })
 
     socketInstance.on('connect', () => {
-      console.log('✅ Socket connected successfully')
+      console.log('✅ Socket connected successfully:', socketInstance.id)
       setIsConnected(true)
     })
 
-    socketInstance.on('disconnect', () => {
-      console.log('❌ Socket disconnected')
+    socketInstance.on('disconnect', (reason) => {
+      console.log('❌ Socket disconnected:', reason)
       setIsConnected(false)
     })
 
     socketInstance.on('connect_error', (error) => {
       console.log('❌ Socket connection error:', error.message)
+      console.log('🔍 Error details:', {
+        type: error.type,
+        description: error.description
+      })
       setIsConnected(false)
+    })
+
+    socketInstance.on('error', (error) => {
+      console.log('❌ Socket error:', error)
     })
 
     setSocket(socketInstance)
 
     return () => {
+      console.log('🔌 Cleaning up socket connection')
       socketInstance.disconnect()
     }
   }, [])
