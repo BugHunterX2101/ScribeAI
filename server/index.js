@@ -13,31 +13,44 @@ const videoToTextService = require('./services/video-to-text.service')
 
 const app = express()
 const server = http.createServer(app)
+
+// CRITICAL FIX: Configure Socket.io with proper CORS settings
 const io = socketIo(server, {
   cors: {
-    origin: "*",
+    origin: ["http://localhost:3000", "http://localhost:3002"], // Add all your frontend ports
     methods: ["GET", "POST"],
-    credentials: true
-  }
+    credentials: true,
+    allowedHeaders: ["*"]
+  },
+  transports: ['websocket', 'polling'], // Enable both transports
+  allowEIO3: true // Enable compatibility
 })
 
 const prisma = new PrismaClient()
 
+// Express CORS middleware
 app.use(cors({
-  origin: "*",
-  credentials: true
+  origin: ["http://localhost:3000", "http://localhost:3002"],
+  credentials: true,
+  methods: ["GET", "POST"]
 }))
 app.use(express.json())
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', message: 'Server is running' })
+})
 
 // Store active sessions
 const activeSessions = new Map()
 
 io.on('connection', (socket) => {
-
+  console.log('✅ Client connected:', socket.id)
 
   socket.on('session:start', async (data) => {
     try {
       const { userId, mode } = data
+      console.log('🎬 Session start request:', { userId, mode })
       
       // Ensure test user exists
       let user = await prisma.user.findUnique({ where: { email: 'test@scribeai.com' } })
@@ -69,10 +82,11 @@ io.on('connection', (socket) => {
         startTime: Date.now()
       })
 
+      console.log('✅ Session created:', session.id)
       socket.emit('session:started', { sessionId: session.id })
 
     } catch (error) {
-      console.error('Session start error:', error)
+      console.error('❌ Session start error:', error)
       socket.emit('error', { message: 'Failed to start session: ' + error.message })
     }
   })
@@ -80,7 +94,10 @@ io.on('connection', (socket) => {
   socket.on('audio:chunk', async (data) => {
     try {
       const sessionInfo = activeSessions.get(socket.id)
-      if (!sessionInfo) return
+      if (!sessionInfo) {
+        console.log('⚠️ No session found for socket:', socket.id)
+        return
+      }
 
       const { sessionId, data: audioData, timestamp } = data
       
@@ -101,7 +118,7 @@ io.on('connection', (socket) => {
       })
 
     } catch (error) {
-      console.error('Audio chunk processing error:', error)
+      console.error('❌ Audio chunk processing error:', error)
     }
   })
 
@@ -113,8 +130,9 @@ io.on('connection', (socket) => {
         data: { status: 'paused' }
       })
       socket.emit('status:update', { status: 'paused' })
+      console.log('⏸️ Session paused:', sessionId)
     } catch (error) {
-  
+      console.error('❌ Session pause error:', error)
     }
   })
 
@@ -126,8 +144,9 @@ io.on('connection', (socket) => {
         data: { status: 'recording' }
       })
       socket.emit('status:update', { status: 'recording' })
+      console.log('▶️ Session resumed:', sessionId)
     } catch (error) {
-  
+      console.error('❌ Session resume error:', error)
     }
   })
 
@@ -184,7 +203,7 @@ io.on('connection', (socket) => {
       activeSessions.delete(socket.id)
 
     } catch (error) {
-      console.error('Video processing error:', error)
+      console.error('❌ Video processing error:', error)
       socket.emit('video:error', { error: error.message })
       videoToTextService.cleanup(data.sessionId)
     }
@@ -193,9 +212,13 @@ io.on('connection', (socket) => {
   socket.on('session:stop', async (data) => {
     try {
       const sessionInfo = activeSessions.get(socket.id)
-      if (!sessionInfo) return
+      if (!sessionInfo) {
+        console.log('⚠️ No session found for stop request')
+        return
+      }
 
       const { sessionId } = data
+      console.log('🛑 Stopping session:', sessionId)
       
       // Update session status
       await prisma.session.update({
@@ -233,6 +256,7 @@ io.on('connection', (socket) => {
         }
       })
 
+      console.log('✅ Session completed:', sessionId)
       socket.emit('session:completed', {
         transcript: transcriptResult.transcript,
         summary: transcriptResult.summary,
@@ -243,13 +267,13 @@ io.on('connection', (socket) => {
       activeSessions.delete(socket.id)
       
     } catch (error) {
-      console.error('Session stop error:', error)
+      console.error('❌ Session stop error:', error)
       socket.emit('error', { message: 'Failed to process recording' })
     }
   })
 
   socket.on('disconnect', () => {
-  
+    console.log('❌ Client disconnected:', socket.id)
     activeSessions.delete(socket.id)
   })
 })
@@ -259,4 +283,5 @@ server.listen(PORT, () => {
   console.log(`🚀 ScribeAI server running on port ${PORT}`)
   console.log('📊 Database:', process.env.DATABASE_URL ? 'Connected' : 'Not configured')
   console.log('🤖 Gemini API:', process.env.GEMINI_API_KEY ? 'Configured' : 'Not configured')
+  console.log('🌐 CORS enabled for: http://localhost:3000, http://localhost:3002')
 })
