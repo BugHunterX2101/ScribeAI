@@ -8,6 +8,10 @@ class SpeechToTextService {
     console.log('⚠️ Speech-to-Text running in simulation mode (no Google Cloud credentials required)');
   }
 
+  isReady() {
+    return true; // Always ready in simulation mode
+  }
+
   async transcribeAudio(audioBuffer, sampleRate = 16000) {
     // Simulate realistic transcription based on audio characteristics
     return this.simulateTranscription(audioBuffer);

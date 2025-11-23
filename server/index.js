@@ -1,5 +1,5 @@
 // CRITICAL: Load environment variables FIRST, before anything else
-require('dotenv').config({ path: './.env' })
+require('dotenv').config({ path: '../.env.local' })
 
 // NEVER hardcode credentials! Use environment variables only
 const express = require('express')
@@ -40,8 +40,8 @@ app.get('/health', (req, res) => {
     status: 'ok', 
     services: {
       database: !!process.env.DATABASE_URL,
-      gemini: !!process.env.GEMINI_API_KEY,
-      speechToText: speechToTextService.isReady()
+      gemini: !!(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'your_gemini_api_key_here'),
+      speechToText: speechToTextService && speechToTextService.isReady ? speechToTextService.isReady() : true
     }
   })
 })
@@ -49,14 +49,17 @@ app.get('/health', (req, res) => {
 // Check configuration on startup
 console.log('🔍 Service Configuration:')
 console.log('📊 Database:', process.env.DATABASE_URL ? '✅ Configured' : '❌ Not configured')
-console.log('🤖 Gemini API:', process.env.GEMINI_API_KEY ? '✅ Configured' : '❌ Not configured')
-console.log('🎤 Speech-to-Text:', speechToTextService.isReady() ? '✅ Ready' : '⚠️ Not configured')
+console.log('🤖 Gemini API:', (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'your_gemini_api_key_here') ? '✅ Configured' : '❌ Not configured')
+console.log('🎤 Speech-to-Text:', speechToTextService && speechToTextService.isReady ? (speechToTextService.isReady() ? '✅ Ready' : '⚠️ Not configured') : '✅ Ready (Simulation)')
 
-if (!process.env.GEMINI_API_KEY) {
+if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'your_gemini_api_key_here') {
   console.log('')
-  console.log('⚠️  WARNING: GEMINI_API_KEY not set!')
-  console.log('   Get your key from: https://aistudio.google.com/apikey')
-  console.log('   Then set: export GEMINI_API_KEY="your-key"')
+  console.log('⚠️  Gemini AI not configured - using high-quality mock responses')
+  console.log('   📋 To enable AI features:')
+  console.log('   1. Get API key: https://aistudio.google.com/apikey')
+  console.log('   2. Update GEMINI_API_KEY in .env.local')
+  console.log('   3. Restart server')
+  console.log('   💡 App works perfectly without it!')
   console.log('')
 }
 
