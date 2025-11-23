@@ -7,7 +7,7 @@
 [![Gemini 2.0 Flash](https://img.shields.io/badge/Gemini-2.0%20Flash-green)](https://ai.google.dev/)
 [![Socket.io](https://img.shields.io/badge/Socket.io-4.7-orange)](https://socket.io/)
 
-## 🚀 Features
+## Features
 
 - **Real-time Audio Processing**: Stream microphone or browser tab audio with live transcription
 - **AI-Powered Summaries**: Gemini 2.0 Flash generates intelligent summaries in <3 seconds
@@ -16,7 +16,7 @@
 - **Session Management**: Persistent history with PostgreSQL storage
 - **Modular Architecture**: Type-safe, scalable design with Zod validation
 
-## 📊 Architecture Comparison
+## Architecture Comparison
 
 | Aspect | Real-time Streaming | File Upload | Hybrid (ScribeAI) |
 |--------|-------------------|-------------|-------------------|
@@ -35,7 +35,7 @@
 4. **Modular Services**: Separation of concerns for maintainability and testing
 5. **Performance Configuration**: Centralized optimization settings for different deployment scenarios
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 ```mermaid
 flowchart TD
@@ -94,7 +94,7 @@ sequenceDiagram
     C->>U: Final Results
 ```
 
-## 🛠️ Quick Start
+## Quick Start
 
 ### Prerequisites
 - Node.js 18+ 
@@ -128,11 +128,11 @@ npm run server     # Backend (port 3001)
 
 Visit `http://localhost:3002` and start transcribing! 🎉
 
-## 📁 Modular Project Structure
+## Modular Project Structure
 
 ```
 ScribeAI/
-├── 🎨 Frontend (Next.js 14)
+├── Frontend (Next.js 14)
 │   ├── app/
 │   │   ├── page.tsx                    # Landing page
 │   │   ├── dashboard/page.tsx          # Main dashboard with stats
@@ -150,7 +150,7 @@ ScribeAI/
 │       ├── types.ts                   # Shared TypeScript types
 │       ├── auth.ts                    # Authentication logic
 │       └── prisma.ts                  # Database client
-├── 🔧 Backend (Express + Socket.io)
+├── Backend (Express + Socket.io)
 │   ├── server/
 │   │   ├── index.js                   # Main server entry
 │   │   ├── config/
@@ -161,7 +161,7 @@ ScribeAI/
 │   │       └── video-to-text.service.js   # Video processing
 │   └── prisma/
 │       └── schema.prisma              # Database schema
-└── 📚 Documentation & Config
+└── Documentation & Config
     ├── GEMINI_SETUP.md               # API setup guide
     ├── package.json                   # Dependencies & scripts
     └── .env.local                     # Environment variables
@@ -209,7 +209,7 @@ interface SessionResponse {
 }
 ```
 
-## ⚡ Performance Optimizations
+## Performance Optimizations
 
 ### Speed Improvements Implemented
 - **Gemini 2.0 Flash Model**: 60-70% faster AI summary generation (<3 seconds)
@@ -238,7 +238,7 @@ module.exports = {
 }
 ```
 
-## 📈 Long-Session Scalability Challenge
+## Long-Session Scalability Challenge
 
 **Challenge**: How does ScribeAI handle 2+ hour recording sessions with 100+ concurrent users without degrading performance or overwhelming system resources?
 
@@ -254,7 +254,7 @@ module.exports = {
 
 **5. Real-world Performance**: Production testing shows linear scalability up to 100 concurrent 1-hour sessions on a 3-node cluster (8GB each), with 99.5% uptime and <500ms average latency for live transcription updates.
 
-## 🔧 API Reference
+## API Reference
 
 ### Socket.io Events (Type-Safe)
 
@@ -319,7 +319,7 @@ POST   /api/auth/register        // User registration
 POST   /api/auth/logout          // User logout
 ```
 
-## 🚀 Deployment
+## Deployment
 
 ### Production Setup
 ```bash
@@ -352,7 +352,7 @@ services:
       - postgres
 ```
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Common Issues & Solutions
 
@@ -403,7 +403,7 @@ npm run analyze          # Bundle size analysis
 npm run lighthouse       # Performance audit
 ```
 
-## 📄 License
+## License
 
 **MIT License** - Feel free to use this project for learning, commercial use, or building awesome transcription apps! 
 
@@ -411,7 +411,7 @@ See [LICENSE](LICENSE) file for details.
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create feature branch (`git checkout -b feature/amazing-feature`)
@@ -428,4 +428,4 @@ See [LICENSE](LICENSE) file for details.
 
 ---
 
-**Built with ❤️ by the ScribeAI team** | [GitHub](https://github.com/BugHunterX2101/ScribeAI) | [Issues](https://github.com/BugHunterX2101/ScribeAI/issues)
+**Built with ❤️ by the Vedit Agrawal** | [GitHub](https://github.com/BugHunterX2101/ScribeAI) | [Issues](https://github.com/BugHunterX2101/ScribeAI/issues)
