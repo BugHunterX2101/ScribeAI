@@ -1,8 +1,7 @@
-// Set environment variables directly
-process.env.DATABASE_URL = 'postgresql://postgres:1234@localhost:5432/ScribeAI'
-process.env.GEMINI_API_KEY = 'AIzaSyDwlyc9_9A0ETLWnMu4aZwtjn_F2CB6G6k'
+// CRITICAL: Load environment variables FIRST, before anything else
+require('dotenv').config({ path: './.env' })
 
-require('dotenv').config({ path: '../.env.local' })
+// NEVER hardcode credentials! Use environment variables only
 const express = require('express')
 const http = require('http')
 const socketIo = require('socket.io')
@@ -10,25 +9,25 @@ const cors = require('cors')
 const { PrismaClient } = require('@prisma/client')
 const geminiService = require('./services/gemini.service')
 const videoToTextService = require('./services/video-to-text.service')
+const speechToTextService = require('./services/speech-to-text.service')
 
 const app = express()
 const server = http.createServer(app)
 
-// CRITICAL FIX: Configure Socket.io with proper CORS settings
+// Configure Socket.io with CORS
 const io = socketIo(server, {
   cors: {
-    origin: ["http://localhost:3000", "http://localhost:3002"], // Add all your frontend ports
+    origin: ["http://localhost:3000", "http://localhost:3002"],
     methods: ["GET", "POST"],
     credentials: true,
     allowedHeaders: ["*"]
   },
-  transports: ['websocket', 'polling'], // Enable both transports
-  allowEIO3: true // Enable compatibility
+  transports: ['websocket', 'polling'],
+  allowEIO3: true
 })
 
 const prisma = new PrismaClient()
 
-// Express CORS middleware
 app.use(cors({
   origin: ["http://localhost:3000", "http://localhost:3002"],
   credentials: true,
@@ -36,10 +35,37 @@ app.use(cors({
 }))
 app.use(express.json())
 
-// Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Server is running' })
+  res.json({ 
+    status: 'ok', 
+    services: {
+      database: !!process.env.DATABASE_URL,
+      gemini: !!process.env.GEMINI_API_KEY,
+      speechToText: speechToTextService.isReady()
+    }
+  })
 })
+
+// Check configuration on startup
+console.log('🔍 Service Configuration:')
+console.log('📊 Database:', process.env.DATABASE_URL ? '✅ Configured' : '❌ Not configured')
+console.log('🤖 Gemini API:', process.env.GEMINI_API_KEY ? '✅ Configured' : '❌ Not configured')
+console.log('🎤 Speech-to-Text:', speechToTextService.isReady() ? '✅ Ready' : '⚠️ Not configured')
+
+if (!process.env.GEMINI_API_KEY) {
+  console.log('')
+  console.log('⚠️  WARNING: GEMINI_API_KEY not set!')
+  console.log('   Get your key from: https://aistudio.google.com/apikey')
+  console.log('   Then set: export GEMINI_API_KEY="your-key"')
+  console.log('')
+}
+
+if (!speechToTextService.isReady()) {
+  console.log('')
+  console.log('⚠️  WARNING: Speech-to-Text not configured!')
+  console.log('   Set up Google Cloud credentials to enable real transcription')
+  console.log('')
+}
 
 // Store active sessions
 const activeSessions = new Map()
@@ -50,9 +76,8 @@ io.on('connection', (socket) => {
   socket.on('session:start', async (data) => {
     try {
       const { userId, mode } = data
-      console.log('🎬 Session start request:', { userId, mode })
+      console.log('🎬 Session start:', { userId, mode })
       
-      // Ensure test user exists
       let user = await prisma.user.findUnique({ where: { email: 'test@scribeai.com' } })
       if (!user) {
         user = await prisma.user.create({
@@ -63,7 +88,6 @@ io.on('connection', (socket) => {
         })
       }
       
-      // Create session in database
       const session = await prisma.session.create({
         data: {
           userId: user.id,
@@ -72,7 +96,6 @@ io.on('connection', (socket) => {
         }
       })
 
-      // Store session info
       activeSessions.set(socket.id, {
         sessionId: session.id,
         userId: user.id,
@@ -101,16 +124,20 @@ io.on('connection', (socket) => {
 
       const { sessionId, data: audioData, timestamp } = data
       
-      // Store chunk
       sessionInfo.chunks.push({ data: audioData, timestamp })
       
-      // Process with Gemini
+      if (!speechToTextService.isReady()) {
+        socket.emit('error', { 
+          message: 'Speech-to-Text not configured. Set up Google Cloud credentials.' 
+        })
+        return
+      }
+      
       const result = await geminiService.transcribeAudio(sessionId, audioData)
       sessionInfo.transcript += result.text + ' '
       
-      console.log('📝 Sending partial transcript:', result.text)
+      console.log('📝 Transcript:', result.text)
       
-      // Send partial transcript
       socket.emit('transcript:partial', { 
         text: result.text,
         timestamp,
@@ -118,7 +145,8 @@ io.on('connection', (socket) => {
       })
 
     } catch (error) {
-      console.error('❌ Audio chunk processing error:', error)
+      console.error('❌ Audio processing error:', error)
+      socket.emit('error', { message: 'Transcription failed: ' + error.message })
     }
   })
 
@@ -130,9 +158,8 @@ io.on('connection', (socket) => {
         data: { status: 'paused' }
       })
       socket.emit('status:update', { status: 'paused' })
-      console.log('⏸️ Session paused:', sessionId)
     } catch (error) {
-      console.error('❌ Session pause error:', error)
+      console.error('❌ Pause error:', error)
     }
   })
 
@@ -144,9 +171,8 @@ io.on('connection', (socket) => {
         data: { status: 'recording' }
       })
       socket.emit('status:update', { status: 'recording' })
-      console.log('▶️ Session resumed:', sessionId)
     } catch (error) {
-      console.error('❌ Session resume error:', error)
+      console.error('❌ Resume error:', error)
     }
   })
 
@@ -160,20 +186,15 @@ io.on('connection', (socket) => {
 
       const { sessionId, data: videoData, filename } = data
       
-      socket.emit('video:processing', { message: 'Extracting audio from video...' })
+      socket.emit('video:processing', { message: 'Processing video...' })
       
-      // Convert base64 to buffer
       const videoBuffer = Buffer.from(videoData, 'base64')
-      
-      // Process video to text
       const transcript = await videoToTextService.processVideoToText(videoBuffer, sessionId)
       
       socket.emit('video:processing', { message: 'Generating summary...' })
       
-      // Generate summary with Gemini
       const summary = await geminiService.generateSummaryFromText(transcript)
       
-      // Create transcript record
       await prisma.transcript.create({
         data: {
           sessionId,
@@ -183,7 +204,6 @@ io.on('connection', (socket) => {
         }
       })
 
-      // Update session
       await prisma.session.update({
         where: { id: sessionId },
         data: { 
@@ -193,17 +213,13 @@ io.on('connection', (socket) => {
         }
       })
 
-      socket.emit('session:completed', {
-        transcript: transcript,
-        summary: summary
-      })
+      socket.emit('session:completed', { transcript, summary })
 
-      // Cleanup
       videoToTextService.cleanup(sessionId)
       activeSessions.delete(socket.id)
 
     } catch (error) {
-      console.error('❌ Video processing error:', error)
+      console.error('❌ Video error:', error)
       socket.emit('video:error', { error: error.message })
       videoToTextService.cleanup(data.sessionId)
     }
@@ -212,15 +228,11 @@ io.on('connection', (socket) => {
   socket.on('session:stop', async (data) => {
     try {
       const sessionInfo = activeSessions.get(socket.id)
-      if (!sessionInfo) {
-        console.log('⚠️ No session found for stop request')
-        return
-      }
+      if (!sessionInfo) return
 
       const { sessionId } = data
       console.log('🛑 Stopping session:', sessionId)
       
-      // Update session status
       await prisma.session.update({
         where: { id: sessionId },
         data: { status: 'processing' }
@@ -228,10 +240,8 @@ io.on('connection', (socket) => {
 
       socket.emit('status:update', { status: 'processing' })
 
-      // Generate complete transcript using Gemini
       const transcriptResult = await geminiService.generateTranscript(sessionId)
       
-      // Create transcript record
       await prisma.transcript.create({
         data: {
           sessionId,
@@ -244,10 +254,8 @@ io.on('connection', (socket) => {
         }
       })
 
-      // Calculate session duration
       const duration = Math.floor((Date.now() - sessionInfo.startTime) / 1000)
       
-      // Update session to completed with duration
       await prisma.session.update({
         where: { id: sessionId },
         data: { 
@@ -259,15 +267,13 @@ io.on('connection', (socket) => {
       console.log('✅ Session completed:', sessionId)
       socket.emit('session:completed', {
         transcript: transcriptResult.transcript,
-        summary: transcriptResult.summary,
-        downloadUrl: `/api/sessions/${sessionId}/download`
+        summary: transcriptResult.summary
       })
 
-      // Clean up
       activeSessions.delete(socket.id)
       
     } catch (error) {
-      console.error('❌ Session stop error:', error)
+      console.error('❌ Stop error:', error)
       socket.emit('error', { message: 'Failed to process recording' })
     }
   })
@@ -280,8 +286,6 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3001
 server.listen(PORT, () => {
-  console.log(`🚀 ScribeAI server running on port ${PORT}`)
-  console.log('📊 Database:', process.env.DATABASE_URL ? 'Connected' : 'Not configured')
-  console.log('🤖 Gemini API:', process.env.GEMINI_API_KEY ? 'Configured' : 'Not configured')
+  console.log(`🚀 Server running on port ${PORT}`)
   console.log('🌐 CORS enabled for: http://localhost:3000, http://localhost:3002')
 })
