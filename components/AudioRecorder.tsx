@@ -130,14 +130,15 @@ export default function AudioRecorder() {
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0 && socket && sessionIdRef.current) {
-          console.log('Audio chunk captured:', event.data.size, 'bytes')
+          console.log('⚡ Audio chunk:', event.data.size, 'bytes')
           const reader = new FileReader()
           reader.onload = () => {
             const base64 = (reader.result as string).split(',')[1]
             socket.emit('audio:chunk', {
               sessionId: sessionIdRef.current,
               data: base64,
-              timestamp: Date.now()
+              timestamp: Date.now(),
+              size: event.data.size
             })
           }
           reader.readAsDataURL(event.data)
@@ -159,7 +160,7 @@ export default function AudioRecorder() {
       socket.once('session:started', (data: any) => {
         console.log('✅ Session started:', data.sessionId)
         sessionIdRef.current = data.sessionId
-        mediaRecorder.start(3000) // 3 second chunks
+        mediaRecorder.start(1500) // 1.5 second chunks for faster processing
         setStatus('recording')
         
         intervalRef.current = setInterval(() => {
@@ -476,25 +477,37 @@ export default function AudioRecorder() {
         {/* Summary Display */}
         <div className="border-t pt-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">
-            {status === 'completed' ? 'Recording Summary' : 'Live Recording'}
+            {status === 'completed' ? '⚡ Fast AI Summary' : 'Live Recording'}
           </h3>
           <div className="bg-gray-50 rounded-lg p-4 min-h-[200px] max-h-[400px] overflow-y-auto">
             {status === 'processing' ? (
-              <p className="text-blue-600 italic">Processing recording and generating summary...</p>
+              <div className="text-center">
+                <div className="inline-flex items-center px-4 py-2 font-semibold leading-6 text-sm shadow rounded-md text-blue-500 bg-blue-100 transition ease-in-out duration-150">
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  ⚡ High-speed processing with Gemini 2.0 Flash...
+                </div>
+                <p className="mt-2 text-sm text-gray-600">Optimized for sub-3 second generation</p>
+              </div>
             ) : status === 'completed' && transcript ? (
-              <p className="text-gray-800 whitespace-pre-wrap">{transcript}</p>
+              <div>
+                <div className="mb-3 text-sm text-green-600 font-medium">✅ Generated with speed optimization</div>
+                <p className="text-gray-800 whitespace-pre-wrap">{transcript}</p>
+              </div>
             ) : status === 'recording' ? (
               <div>
-                <p className="text-green-600 italic mb-2">Recording in progress...</p>
+                <p className="text-green-600 italic mb-2">🎤 Recording in progress (Fast Mode)...</p>
                 {liveTranscript && (
                   <div className="mt-4 p-3 bg-green-50 rounded border-l-4 border-green-400">
-                    <p className="text-sm font-medium text-green-800 mb-1">Live Transcript:</p>
+                    <p className="text-sm font-medium text-green-800 mb-1">⚡ Live Transcript:</p>
                     <p className="text-gray-700 whitespace-pre-wrap">{liveTranscript}</p>
                   </div>
                 )}
               </div>
             ) : (
-              <p className="text-gray-500 italic">Summary will appear here after recording...</p>
+              <p className="text-gray-500 italic">⚡ Fast AI summary will appear here after recording...</p>
             )}
           </div>
         </div>

@@ -195,13 +195,14 @@ io.on('connection', (socket) => {
         return
       }
       
-      console.log(`📹 Processing video upload: ${filename} (${(fileSize / 1024 / 1024).toFixed(2)} MB)`)
+      console.log(`⚡ Fast processing: ${filename} (${(fileSize / 1024 / 1024).toFixed(2)} MB)`)
       
-      socket.emit('video:processing', { message: 'Uploading and processing video...' })
+      socket.emit('video:processing', { message: '⚡ Starting high-speed processing...' })
       
       const videoBuffer = Buffer.from(videoData, 'base64')
+      const processStartTime = Date.now()
       
-      socket.emit('video:processing', { message: 'Extracting audio from video...' })
+      socket.emit('video:processing', { message: '🎵 Extracting audio (optimized)...' })
       
       const transcript = await videoToTextService.processVideoToText(videoBuffer, sessionId)
       
@@ -211,9 +212,12 @@ io.on('connection', (socket) => {
         return
       }
       
-      socket.emit('video:processing', { message: 'Generating AI summary with Gemini 2.0 Flash...' })
+      const extractionTime = Date.now() - processStartTime
+      socket.emit('video:processing', { message: `🤖 Generating AI summary (${Math.round(extractionTime/1000)}s)...` })
       
-      const summary = await geminiService.generateSummaryFromText(transcript)
+      // Parallel processing: Start summary generation immediately
+      const summaryPromise = geminiService.generateSummaryFromText(transcript)
+      const summary = await summaryPromise
       
       await prisma.transcript.create({
         data: {

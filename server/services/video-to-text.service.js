@@ -27,14 +27,22 @@ class VideoToTextService {
         .audioCodec('pcm_s16le')
         .audioFrequency(16000)
         .audioChannels(1)
+        .audioFilters('volume=2.0')  // Boost volume for better recognition
+        .outputOptions([
+          '-preset', 'ultrafast',    // Fastest encoding
+          '-threads', '0',           // Use all CPU cores
+          '-ac', '1'                 // Force mono
+        ])
+        .on('progress', (progress) => {
+          console.log(`⚡ Audio extraction: ${Math.round(progress.percent || 0)}%`)
+        })
         .on('end', () => {
-          // Clean up video file
+          console.log('✅ Audio extraction completed')
           fs.unlinkSync(videoPath);
           resolve(audioPath);
         })
         .on('error', (err) => {
-          console.error('FFmpeg error:', err);
-          // Clean up files
+          console.error('❌ FFmpeg error:', err);
           if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
           if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
           reject(err);

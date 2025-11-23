@@ -2,9 +2,13 @@
 /node_modules
 /.pnp
 .pnp.js
+/server/node_modules
 
 # Testing
 /coverage
+*.test.js
+*.test.ts
+/tests/
 
 # Next.js
 /.next/
@@ -12,15 +16,19 @@
 
 # Production
 /build
+/dist/
 
 # Misc
 .DS_Store
 *.pem
+.vscode/
+.idea/
 
 # Debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+*.log
 
 # Local env files
 .env*.local
@@ -36,5 +44,18 @@ next-env.d.ts
 # Prisma
 /prisma/migrations/
 
-# Server
-/server/node_modules
+# Temporary files
+/server/temp/
+*.tmp
+*.temp
+
+# Documentation and test files
+*test.html
+*test.js
+service-test.*
+audio-test.*
+*.md.backup
+FINAL_*.md
+*_implementation.md
+start-*.bat
+docker-compose.yml
