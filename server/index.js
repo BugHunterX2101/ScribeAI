@@ -187,14 +187,31 @@ io.on('connection', (socket) => {
         return
       }
 
-      const { sessionId, data: videoData, filename } = data
+      const { sessionId, data: videoData, filename, fileSize } = data
       
-      socket.emit('video:processing', { message: 'Processing video...' })
+      // Validate file size
+      if (fileSize > 100 * 1024 * 1024) { // 100MB limit
+        socket.emit('video:error', { error: 'Video file too large. Maximum size is 100MB.' })
+        return
+      }
+      
+      console.log(`📹 Processing video upload: ${filename} (${(fileSize / 1024 / 1024).toFixed(2)} MB)`)
+      
+      socket.emit('video:processing', { message: 'Uploading and processing video...' })
       
       const videoBuffer = Buffer.from(videoData, 'base64')
+      
+      socket.emit('video:processing', { message: 'Extracting audio from video...' })
+      
       const transcript = await videoToTextService.processVideoToText(videoBuffer, sessionId)
       
-      socket.emit('video:processing', { message: 'Generating summary...' })
+      if (!transcript || transcript.trim() === '') {
+        socket.emit('video:error', { error: 'No speech detected in video. Please ensure the video has clear audio.' })
+        videoToTextService.cleanup(sessionId)
+        return
+      }
+      
+      socket.emit('video:processing', { message: 'Generating AI summary with Gemini 2.0 Flash...' })
       
       const summary = await geminiService.generateSummaryFromText(transcript)
       
@@ -212,10 +229,11 @@ io.on('connection', (socket) => {
         data: { 
           title: `Video: ${filename}`,
           status: 'completed',
-          duration: 0
+          duration: Math.floor(videoBuffer.length / 16000) // Rough estimate
         }
       })
 
+      console.log(`✅ Video processing completed for session: ${sessionId}`)
       socket.emit('session:completed', { transcript, summary })
 
       videoToTextService.cleanup(sessionId)

@@ -227,6 +227,20 @@ export default function AudioRecorder() {
       return
     }
 
+    // Validate file size (max 100MB)
+    const maxSizeInBytes = 100 * 1024 * 1024 // 100MB
+    if (videoFile.size > maxSizeInBytes) {
+      setError('Video file is too large. Please select a file smaller than 100MB.')
+      return
+    }
+
+    // Validate file type
+    const validTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/avi', 'video/mov', 'video/wmv']
+    if (!validTypes.includes(videoFile.type)) {
+      setError('Please select a valid video file (MP4, WebM, OGG, AVI, MOV, WMV)')
+      return
+    }
+
     try {
       setIsUploading(true)
       setError('')
@@ -242,18 +256,40 @@ export default function AudioRecorder() {
       socket.once('session:started', async (data: any) => {
         sessionIdRef.current = data.sessionId
         
-        // Convert video to base64 and send
-        const reader = new FileReader()
-        reader.onload = () => {
-          const base64 = (reader.result as string).split(',')[1]
-          socket.emit('video:upload', {
-            sessionId: sessionIdRef.current,
-            data: base64,
-            filename: videoFile.name
-          })
+        try {
+          // Convert video to base64 and send in chunks if large
+          const reader = new FileReader()
+          reader.onload = () => {
+            const base64 = (reader.result as string).split(',')[1]
+            socket.emit('video:upload', {
+              sessionId: sessionIdRef.current,
+              data: base64,
+              filename: videoFile.name,
+              fileSize: videoFile.size
+            })
+          }
+          reader.onerror = () => {
+            setError('Failed to read video file. Please try again.')
+            setIsUploading(false)
+            setStatus('idle')
+          }
+          reader.readAsDataURL(videoFile)
+        } catch (readerError) {
+          setError('Failed to process video file. Please try a different file.')
+          setIsUploading(false)
+          setStatus('idle')
         }
-        reader.readAsDataURL(videoFile)
       })
+
+      // Add timeout for session start
+      setTimeout(() => {
+        if (isUploading && status === 'processing') {
+          setError('Video processing timeout. Please try again with a smaller file.')
+          setIsUploading(false)
+          setStatus('idle')
+        }
+      }, 300000) // 5 minute timeout
+
     } catch (err: any) {
       setError(`Video processing failed: ${err.message}`)
       setIsUploading(false)
@@ -299,14 +335,32 @@ export default function AudioRecorder() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Upload Video File
               </label>
-              <input
-                type="file"
-                accept="video/*"
-                onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
-                disabled={status !== 'idle'}
-                aria-label="Upload Video File"
-                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-              />
+              <div className="space-y-2">
+                <input
+                  type="file"
+                  accept="video/mp4,video/webm,video/ogg,video/avi,video/mov,video/wmv"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null
+                    setVideoFile(file)
+                    if (file) {
+                      console.log('📁 Video file selected:', file.name, 'Size:', (file.size / 1024 / 1024).toFixed(2), 'MB')
+                    }
+                  }}
+                  disabled={status !== 'idle'}
+                  aria-label="Upload Video File"
+                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50"
+                />
+                {videoFile && (
+                  <div className="text-sm text-gray-600">
+                    <p><strong>File:</strong> {videoFile.name}</p>
+                    <p><strong>Size:</strong> {(videoFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                    <p><strong>Type:</strong> {videoFile.type}</p>
+                  </div>
+                )}
+                <p className="text-xs text-gray-500">
+                  Supported formats: MP4, WebM, OGG, AVI, MOV, WMV (Max 100MB)
+                </p>
+              </div>
             </div>
           )}
 
@@ -330,14 +384,35 @@ export default function AudioRecorder() {
               <button
                 onClick={processVideo}
                 disabled={!videoFile || !isConnected || isUploading}
-                className={`px-6 py-3 rounded-full font-medium ${
+                title={!videoFile ? 'Please select a video file' : !isConnected ? 'Not connected to server' : 'Process the selected video file'}
+                className={`px-6 py-3 rounded-full font-medium transition-colors ${
                   videoFile && isConnected && !isUploading
                     ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer' 
                     : 'bg-gray-400 text-gray-200 cursor-not-allowed'
                 }`}
               >
-                {isUploading ? 'Processing...' : 'Process Video'}
+                {isUploading ? (
+                  <span className="flex items-center">
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Processing Video...
+                  </span>
+                ) : (
+                  '🎬 Process Video'
+                )}
               </button>
+            )}
+            
+            {status === 'processing' && mode === 'video' && (
+              <div className="flex items-center space-x-2">
+                <svg className="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span className="text-blue-600 font-medium">Processing video, please wait...</span>
+              </div>
             )}
             
             {status === 'recording' && (
