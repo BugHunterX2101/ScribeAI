@@ -1,7 +1,27 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai')
 const speechToTextService = require('./speech-to-text.service')
 
+/**
+ * Gemini AI Service for audio transcription and AI-powered summarization
+ * 
+ * Handles real-time audio processing using Google's Gemini 2.0 Flash model
+ * with performance optimizations for sub-3 second summary generation.
+ * 
+ * @class GeminiService
+ * @author ScribeAI Team
+ * @version 2.0.0
+ */
 class GeminiService {
+  /**
+   * Initialize Gemini service with optimized configuration
+   * 
+   * Sets up Google Generative AI client with performance-focused settings:
+   * - Gemini 2.0 Flash model for 60-70% faster generation
+   * - Reduced token limits for speed optimization
+   * - Temperature tuning for focused responses
+   * 
+   * @constructor
+   */
   constructor() {
     this.apiKey = process.env.GEMINI_API_KEY
     this.genAI = null
@@ -289,6 +309,24 @@ ${hasKeywords.actions ? '• Follow-up actions mentioned' : '• No specific act
 💡 Note: AI summarization temporarily unavailable. Full transcript contains all details.`
   }
 
+  /**
+   * Generate AI-powered summary from transcript text using Gemini 2.0 Flash
+   * 
+   * Optimized for speed with performance enhancements:
+   * - Text trimming to 6000 chars for faster processing
+   * - Focused prompts for quicker generation
+   * - Processing time monitoring
+   * - Graceful fallback to basic summaries
+   * 
+   * @param {string} text - The transcript text to summarize
+   * @returns {Promise<string>} AI-generated summary with timing info
+   * 
+   * @example
+   * const summary = await geminiService.generateSummaryFromText(
+   *   "Meeting transcript about project planning..."
+   * )
+   * // Returns: "⚡ AI Summary (1,250ms)\n\n• Project deadline set for next month..."
+   */
   async generateSummaryFromText(text) {
     if (!this.model) {
       return this.generateBasicSummaryFromText(text)

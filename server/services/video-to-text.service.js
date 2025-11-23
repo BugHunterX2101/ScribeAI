@@ -6,7 +6,25 @@ const { speechToText } = require('./speech-to-text.service');
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
+/**
+ * Video-to-Text Processing Service
+ * 
+ * Handles video file uploads, audio extraction using FFmpeg, and speech-to-text conversion.
+ * Optimized for speed with ultrafast preset and multi-threading support.
+ * 
+ * @class VideoToTextService
+ * @author ScribeAI Team
+ * @version 1.2.0
+ */
 class VideoToTextService {
+  /**
+   * Initialize video processing service with temporary directory setup
+   * 
+   * Creates temp directory for video/audio processing files with automatic cleanup.
+   * Configures FFmpeg with optimized settings for fastest processing.
+   * 
+   * @constructor
+   */
   constructor() {
     this.tempDir = path.join(__dirname, '../temp');
     if (!fs.existsSync(this.tempDir)) {
@@ -51,6 +69,23 @@ class VideoToTextService {
     });
   }
 
+  /**
+   * Process video file to extract transcript text
+   * 
+   * Complete pipeline: Video → Audio Extraction → Speech Recognition → Transcript
+   * Optimized for performance with automatic cleanup and error handling.
+   * 
+   * @param {Buffer} videoBuffer - Raw video file data as Buffer
+   * @param {string} sessionId - Unique session identifier for file naming
+   * @returns {Promise<string>} Extracted transcript text
+   * 
+   * @throws {Error} When video processing fails (invalid format, no audio, etc.)
+   * 
+   * @example
+   * const videoBuffer = fs.readFileSync('meeting.mp4')
+   * const transcript = await videoService.processVideoToText(videoBuffer, 'session-123')
+   * // Returns: "Welcome to today's meeting. First agenda item..."
+   */
   async processVideoToText(videoBuffer, sessionId) {
     try {
       console.log('🎬 Processing video to text for session:', sessionId);
