@@ -51,10 +51,11 @@ export default function SocketProvider({ children }: { children: React.ReactNode
     })
 
     socketInstance.on('connect_error', (error) => {
-      console.log('❌ Socket connection error:', error.message)
+      const err = error as unknown as { message: string; type?: string; description?: string }
+      console.log('❌ Socket connection error:', err.message)
       console.log('🔍 Error details:', {
-        type: error.type,
-        description: error.description
+        type: err.type,
+        description: err.description
       })
       setIsConnected(false)
     })

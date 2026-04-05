@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
-import { PrismaClient } from '@prisma/client'
 
 interface Session {
   id: string
@@ -121,7 +120,7 @@ export default function Sessions() {
                                 Duration: {formatDuration(session.duration)}
                               </span>
                             </p>
-                            {session.transcripts.length > 0 && (
+                            {session.transcripts.length > 0 && session.transcripts[0].summary && (
                               <p className="mt-2 text-sm text-gray-600">
                                 {session.transcripts[0].summary.substring(0, 100)}...
                               </p>

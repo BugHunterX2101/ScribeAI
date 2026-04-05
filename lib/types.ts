@@ -25,7 +25,7 @@ export interface User {
 }
 
 export const UserSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().cuid(),
   email: z.string().email(),
   createdAt: z.date()
 })
@@ -50,8 +50,8 @@ export interface Session {
 export type SessionStatus = 'idle' | 'recording' | 'paused' | 'processing' | 'completed' | 'cancelled'
 
 export const SessionSchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
+  id: z.string().cuid(),
+  userId: z.string().cuid(),
   title: z.string().min(1).max(200),
   status: z.enum(['idle', 'recording', 'paused', 'processing', 'completed', 'cancelled']),
   duration: z.number().min(0),
@@ -75,7 +75,7 @@ export interface AudioChunk {
 }
 
 export const AudioChunkSchema = z.object({
-  sessionId: z.string().uuid(),
+  sessionId: z.string().cuid(),
   data: z.string().min(1, 'Audio data cannot be empty'),
   timestamp: z.number().positive('Timestamp must be positive'),
   size: z.number().positive('Size must be positive'),
@@ -94,7 +94,7 @@ export interface VideoUpload {
 }
 
 export const VideoUploadSchema = z.object({
-  sessionId: z.string().uuid(),
+  sessionId: z.string().cuid(),
   data: z.string().min(1, 'Video data cannot be empty'),
   filename: z.string().min(1).max(255),
   fileSize: z.number().positive().max(100 * 1024 * 1024, 'File size must be under 100MB'),
@@ -119,8 +119,8 @@ export interface Transcript {
 }
 
 export const TranscriptSchema = z.object({
-  id: z.string().uuid(),
-  sessionId: z.string().uuid(),
+  id: z.string().cuid(),
+  sessionId: z.string().cuid(),
   content: z.string().min(1, 'Content cannot be empty'),
   summary: z.string().optional(),
   timestampChunks: z.array(z.object({

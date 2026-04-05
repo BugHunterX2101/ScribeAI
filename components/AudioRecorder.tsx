@@ -15,12 +15,23 @@ export default function AudioRecorder() {
   const [liveTranscript, setLiveTranscript] = useState('')
   const [duration, setDuration] = useState(0)
   const [error, setError] = useState('')
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const { socket, isConnected } = useSocket()
   const sessionIdRef = useRef<string | null>(null)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Fetch the authenticated user's ID on mount
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.userId) setCurrentUserId(data.userId)
+      })
+      .catch(() => {/* silently fail - userId will be null */})
+  }, [])
 
   useEffect(() => {
     if (!socket) return
@@ -153,7 +164,7 @@ export default function AudioRecorder() {
       // Start session
       console.log('📡 Emitting session:start event')
       socket.emit('session:start', {
-        userId: 'temp-user-id',
+        userId: currentUserId,
         mode
       })
 
@@ -250,7 +261,7 @@ export default function AudioRecorder() {
 
       // Start session for video processing
       socket.emit('session:start', {
-        userId: 'temp-user-id',
+        userId: currentUserId,
         mode: 'video'
       })
 

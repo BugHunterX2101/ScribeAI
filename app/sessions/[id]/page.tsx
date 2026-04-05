@@ -118,7 +118,7 @@ export default function SessionDetail() {
                   <h2 className="text-lg font-medium text-gray-900 mb-4">AI-Generated Summary</h2>
                   <div className="prose max-w-none">
                     <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans">
-                      {session.transcripts[0].summary}
+                      {session.transcripts[0].summary ?? 'No summary available.'}
                     </pre>
                   </div>
                 </div>

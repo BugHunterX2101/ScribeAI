@@ -2,7 +2,7 @@ const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 const fs = require('fs');
 const path = require('path');
-const { speechToText } = require('./speech-to-text.service');
+const speechToTextService = require('./speech-to-text.service');
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -95,7 +95,8 @@ class VideoToTextService {
       
       // Convert audio to text
       const audioBuffer = fs.readFileSync(audioPath);
-      const transcript = await speechToText(audioBuffer);
+      const result = await speechToTextService.transcribeAudio(audioBuffer);
+      const transcript = result.text || '';
       
       // Clean up audio file
       fs.unlinkSync(audioPath);

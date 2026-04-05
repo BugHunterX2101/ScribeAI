@@ -17,7 +17,13 @@ const server = http.createServer(app)
 // Configure Socket.io with CORS
 const io = socketIo(server, {
   cors: {
-    origin: ["http://localhost:3000", "http://localhost:3002"],
+    origin: [
+      "http://localhost:3000",
+      "http://localhost:3001",
+      "http://localhost:3002",
+      "http://localhost:3003",
+      process.env.NEXT_PUBLIC_APP_URL
+    ].filter(Boolean),
     methods: ["GET", "POST"],
     credentials: true,
     allowedHeaders: ["*"]
@@ -29,7 +35,13 @@ const io = socketIo(server, {
 const prisma = new PrismaClient()
 
 app.use(cors({
-  origin: ["http://localhost:3000", "http://localhost:3002"],
+  origin: [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+    "http://localhost:3003",
+    process.env.NEXT_PUBLIC_APP_URL
+  ].filter(Boolean),
   credentials: true,
   methods: ["GET", "POST"]
 }))
@@ -80,20 +92,36 @@ io.on('connection', (socket) => {
     try {
       const { userId, mode } = data
       console.log('🎬 Session start:', { userId, mode })
-      
-      let user = await prisma.user.findUnique({ where: { email: 'test@scribeai.com' } })
-      if (!user) {
-        user = await prisma.user.create({
-          data: {
-            email: 'test@scribeai.com',
-            password: 'test_password'
-          }
-        })
+
+      // Use the userId passed from the client (set from the auth cookie)
+      // Fall back to finding/creating a placeholder only when userId is the legacy temp value
+      let dbUserId = userId
+
+      if (!userId || userId === 'temp-user-id') {
+        // Legacy fallback: find or create a test user so the server doesn't crash
+        let user = await prisma.user.findUnique({ where: { email: 'test@scribeai.com' } })
+        if (!user) {
+          const bcrypt = require('bcryptjs')
+          user = await prisma.user.create({
+            data: {
+              email: 'test@scribeai.com',
+              password: await bcrypt.hash('test_password_placeholder', 10)
+            }
+          })
+        }
+        dbUserId = user.id
+      } else {
+        // Verify the user actually exists
+        const user = await prisma.user.findUnique({ where: { id: userId } })
+        if (!user) {
+          socket.emit('error', { message: 'User not found. Please log in again.' })
+          return
+        }
       }
       
       const session = await prisma.session.create({
         data: {
-          userId: user.id,
+          userId: dbUserId,
           title: `Recording ${new Date().toLocaleString()}`,
           status: 'recording'
         }
@@ -101,7 +129,7 @@ io.on('connection', (socket) => {
 
       activeSessions.set(socket.id, {
         sessionId: session.id,
-        userId: user.id,
+        userId: dbUserId,
         mode,
         chunks: [],
         transcript: '',

@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import AudioRecorder from '../../components/AudioRecorder'
-import SocketProvider from '../../components/SocketProvider'
 
 interface DashboardStats {
   totalSessions: number
@@ -44,13 +43,12 @@ export default function Dashboard() {
     }
   }
 
-  const handleLogout = () => {
-    document.cookie = 'userId=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' })
     window.location.href = '/auth/login'
   }
   return (
-    <SocketProvider>
-      <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50">
         <nav className="bg-white shadow">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between h-16">
@@ -141,6 +139,5 @@ export default function Dashboard() {
         </div>
       </main>
     </div>
-    </SocketProvider>
   )
 }
