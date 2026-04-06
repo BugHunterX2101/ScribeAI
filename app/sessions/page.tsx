@@ -1,5 +1,4 @@
 'use client'
-
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
 
@@ -9,137 +8,113 @@ interface Session {
   status: string
   duration: number
   createdAt: string
-  transcripts: {
-    id: string
-    summary: string
-  }[]
+  transcripts: { id: string; summary: string | null }[]
+}
+
+const statusClass: Record<string, string> = {
+  completed: 'badge badge-completed',
+  processing: 'badge badge-processing',
+  recording: 'badge badge-recording',
+  paused: 'badge badge-paused',
+  idle: 'badge badge-idle',
 }
 
 export default function Sessions() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  useEffect(() => {
-    fetchSessions()
-  }, [])
+  useEffect(() => { fetchSessions() }, [])
 
   const fetchSessions = async () => {
     try {
-      const response = await fetch('/api/sessions')
-      if (response.ok) {
-        const data = await response.json()
-        setSessions(data)
-      }
-    } catch (error) {
-      console.error('Failed to fetch sessions:', error)
-    } finally {
-      setLoading(false)
-    }
+      const res = await fetch('/api/sessions')
+      if (res.ok) setSessions(await res.json())
+    } catch (e) { console.error(e) }
+    finally { setLoading(false) }
   }
 
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, '0')}`
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this session and all its transcripts?')) return
+    setDeletingId(id)
+    const res = await fetch(`/api/sessions/${id}`, { method: 'DELETE' })
+    if (res.ok) setSessions(s => s.filter(x => x.id !== id))
+    setDeletingId(null)
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed': return 'bg-green-100 text-green-800'
-      case 'processing': return 'bg-blue-100 text-blue-800'
-      case 'recording': return 'bg-red-100 text-red-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center">
-              <Link href="/dashboard" className="text-xl font-semibold">ScribeAI</Link>
-            </div>
-            <div className="flex items-center space-x-4">
-              <Link href="/sessions/new" className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
-                New Recording
-              </Link>
-            </div>
-          </div>
-        </div>
+    <div style={{ minHeight: '100vh', position: 'relative' }}>
+      <div className="orb orb-blue" style={{ opacity: 0.15 }} />
+      <div className="orb orb-purple" style={{ opacity: 0.12 }} />
+      <div className="grid-overlay" style={{ opacity: 0.4 }} />
+
+      <nav className="nav">
+        <Link href="/dashboard" className="nav-logo" style={{ textDecoration: 'none' }}><span className="logo-dot" />ScribeAI</Link>
+        <Link href="/sessions/new" className="btn-primary" style={{ textDecoration: 'none', fontSize: '13px', padding: '8px 18px' }}>+ New recording</Link>
       </nav>
 
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
-          <div className="sm:flex sm:items-center">
-            <div className="sm:flex-auto">
-              <h1 className="text-xl font-semibold text-gray-900">Sessions</h1>
-              <p className="mt-2 text-sm text-gray-700">
-                A list of all your transcription sessions.
-              </p>
-            </div>
+      <main style={{ maxWidth: '900px', margin: '0 auto', padding: '40px 24px', position: 'relative', zIndex: 2 }}>
+        <div className="fade-up" style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+          <div>
+            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '26px', fontWeight: '800', letterSpacing: '-0.02em' }}>Sessions</h1>
+            <p style={{ color: 'var(--text3)', fontSize: '13px', marginTop: '4px' }}>
+              {sessions.length > 0 ? `${sessions.length} recording${sessions.length !== 1 ? 's' : ''}` : 'No recordings yet'}
+            </p>
           </div>
-          
-          {loading ? (
-            <div className="mt-8 bg-white shadow rounded-lg">
-              <div className="px-4 py-5 sm:p-6 text-center">
-                <p className="text-gray-500">Loading sessions...</p>
-              </div>
-            </div>
-          ) : sessions.length === 0 ? (
-            <div className="mt-8 bg-white shadow rounded-lg">
-              <div className="px-4 py-5 sm:p-6 text-center">
-                <div className="text-gray-500">
-                  <p className="text-lg">No sessions yet</p>
-                  <p className="mt-2">Start your first recording to see it here.</p>
-                  <div className="mt-4">
-                    <Link href="/sessions/new" className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700">
-                      Start Recording
-                    </Link>
+          <Link href="/dashboard" style={{ fontSize: '13px', color: 'var(--text3)', textDecoration: 'none' }}>← Dashboard</Link>
+        </div>
+
+        {loading ? (
+          <div className="glass fade-up" style={{ borderRadius: '16px', padding: '48px', textAlign: 'center' }}>
+            <div className="spinner" style={{ margin: '0 auto 12px' }} />
+            <p style={{ color: 'var(--text3)', fontSize: '14px' }}>Loading sessions…</p>
+          </div>
+        ) : sessions.length === 0 ? (
+          <div className="glass fade-up" style={{ borderRadius: '20px', padding: '64px 32px', textAlign: 'center' }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>🎤</div>
+            <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '20px', fontWeight: '700', marginBottom: '8px' }}>No sessions yet</h3>
+            <p style={{ color: 'var(--text3)', fontSize: '14px', marginBottom: '28px' }}>Start your first recording to see it here</p>
+            <Link href="/sessions/new" className="btn-primary" style={{ textDecoration: 'none' }}>Start recording →</Link>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {sessions.map((session, i) => (
+              <div key={session.id} className={`glass card-glow fade-up fade-up-delay-${Math.min(i + 1, 4)}`} style={{ borderRadius: '16px', padding: '20px 24px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
+                  <Link href={`/sessions/${session.id}`} style={{ textDecoration: 'none', flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                      <span className={statusClass[session.status] || 'badge badge-idle'}>
+                        {session.status === 'recording' && <span className="rec-dot" />}
+                        {session.status}
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text3)' }}>{fmt(session.duration)}</span>
+                    </div>
+                    <p style={{ fontFamily: 'var(--font-display)', fontWeight: '600', fontSize: '15px', color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: session.transcripts[0]?.summary ? '6px' : 0 }}>
+                      {session.title}
+                    </p>
+                    {session.transcripts[0]?.summary && (
+                      <p style={{ fontSize: '12px', color: 'var(--text3)', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                        {session.transcripts[0].summary.substring(0, 120)}…
+                      </p>
+                    )}
+                  </Link>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+                      {new Date(session.createdAt).toLocaleDateString()}
+                    </span>
+                    <button onClick={() => handleDelete(session.id)} disabled={deletingId === session.id} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: '16px', padding: '4px', lineHeight: 1, transition: 'color 0.2s' }}
+                      onMouseEnter={e => (e.currentTarget.style.color = '#f87171')}
+                      onMouseLeave={e => (e.currentTarget.style.color = 'var(--text3)')}>
+                      {deletingId === session.id ? '⏳' : '×'}
+                    </button>
                   </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-md">
-              <ul className="divide-y divide-gray-200">
-                {sessions.map((session) => (
-                  <li key={session.id}>
-                    <Link href={`/sessions/${session.id}`} className="block hover:bg-gray-50">
-                      <div className="px-4 py-4 sm:px-6">
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-indigo-600 truncate">
-                              {session.title}
-                            </p>
-                            <p className="mt-2 flex items-center text-sm text-gray-500">
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(session.status)}`}>
-                                {session.status}
-                              </span>
-                              <span className="ml-4">
-                                Duration: {formatDuration(session.duration)}
-                              </span>
-                            </p>
-                            {session.transcripts.length > 0 && session.transcripts[0].summary && (
-                              <p className="mt-2 text-sm text-gray-600">
-                                {session.transcripts[0].summary.substring(0, 100)}...
-                              </p>
-                            )}
-                          </div>
-                          <div className="ml-2 flex-shrink-0 flex">
-                            <p className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                              {new Date(session.createdAt).toLocaleDateString()}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </main>
     </div>
   )

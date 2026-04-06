@@ -16,192 +16,99 @@ export default function AudioRecorder() {
   const [duration, setDuration] = useState(0)
   const [error, setError] = useState('')
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [videoProcessingMsg, setVideoProcessingMsg] = useState('')
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const { socket, isConnected } = useSocket()
   const sessionIdRef = useRef<string | null>(null)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
+  const transcriptRef = useRef<HTMLDivElement | null>(null)
 
-  // Fetch the authenticated user's ID on mount
   useEffect(() => {
     fetch('/api/auth/me')
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        if (data?.userId) setCurrentUserId(data.userId)
-      })
-      .catch(() => {/* silently fail - userId will be null */})
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.userId) setCurrentUserId(d.userId) })
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
     if (!socket) return
-    
-    const handleTranscriptPartial = (data: any) => {
-      console.log('📝 Partial transcript received:', data.text)
-      setLiveTranscript(prev => prev + data.text + ' ')
+    const onPartial = (d: { text: string }) => {
+      setLiveTranscript(p => p + d.text + ' ')
+      setTimeout(() => transcriptRef.current?.scrollTo({ top: 999999, behavior: 'smooth' }), 50)
     }
-
-    const handleStatusUpdate = (data: any) => {
-      setStatus(data.status)
-    }
-
-    const handleSessionCompleted = (data: any) => {
+    const onStatus = (d: { status: RecordingStatus }) => setStatus(d.status)
+    const onCompleted = (d: { summary?: string; transcript?: string }) => {
       setStatus('completed')
       setIsUploading(false)
-      if (data.summary) {
-        setTranscript(data.summary)
-      } else if (data.transcript) {
-        setTranscript(data.transcript)
-      }
+      setTranscript(d.summary || d.transcript || '')
     }
+    const onVideoProcessing = (d: { message: string }) => setVideoProcessingMsg(d.message)
+    const onVideoError = (d: { error: string }) => { setError(d.error); setIsUploading(false); setStatus('idle') }
 
-    socket.on('transcript:partial', handleTranscriptPartial)
-    socket.on('status:update', handleStatusUpdate)
-    socket.on('session:completed', handleSessionCompleted)
-    socket.on('video:processing', (data: any) => {
-      console.log('🎬 Video processing:', data.message)
-    })
-    socket.on('video:error', (data: any) => {
-      setError(data.error)
-      setIsUploading(false)
-      setStatus('idle')
-    })
-
+    socket.on('transcript:partial', onPartial)
+    socket.on('status:update', onStatus)
+    socket.on('session:completed', onCompleted)
+    socket.on('video:processing', onVideoProcessing)
+    socket.on('video:error', onVideoError)
     return () => {
-      socket.off('transcript:partial', handleTranscriptPartial)
-      socket.off('status:update', handleStatusUpdate)
-      socket.off('session:completed', handleSessionCompleted)
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-      }
+      socket.off('transcript:partial', onPartial)
+      socket.off('status:update', onStatus)
+      socket.off('session:completed', onCompleted)
+      socket.off('video:processing', onVideoProcessing)
+      socket.off('video:error', onVideoError)
+      if (intervalRef.current) clearInterval(intervalRef.current)
     }
   }, [socket])
 
   const startRecording = async () => {
     try {
-      console.log('🎬 Starting recording...')
-      console.log('Socket:', socket ? 'Available' : 'Not available')
-      console.log('Connected:', isConnected)
-      
-      setError('')
-      setTranscript('')
-      setLiveTranscript('')
-      setDuration(0)
-      
-      if (!socket || !isConnected) {
-        setError('Socket not connected. Please check if server is running on port 3002.')
-        console.error('❌ Socket connection failed')
-        return
-      }
+      setError(''); setTranscript(''); setLiveTranscript(''); setDuration(0)
+      if (!socket || !isConnected) { setError('Not connected to server. Is the backend running on port 3001?'); return }
 
-      console.log('🎤 Requesting media access for:', mode)
-      
       let stream: MediaStream
       if (mode === 'mic') {
-        stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            sampleRate: 44100
-          }
-        })
-        console.log('✅ Microphone access granted')
+        stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 44100 } })
       } else {
-        // For tab audio, we need to request display media with audio
         try {
-          stream = await navigator.mediaDevices.getDisplayMedia({ 
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              sampleRate: 44100
-            },
-            video: false 
-          })
-          console.log('✅ Tab audio access granted')
-        } catch (tabError) {
-          // Fallback: try with video=true and hide video track
-          stream = await navigator.mediaDevices.getDisplayMedia({ 
-            audio: true,
-            video: true
-          })
-          // Stop video track to only capture audio
-          const videoTracks = stream.getVideoTracks()
-          videoTracks.forEach(track => track.stop())
-          console.log('✅ Tab audio access granted (with video fallback)')
+          stream = await navigator.mediaDevices.getDisplayMedia({ audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 44100 } as MediaTrackConstraints, video: false })
+        } catch {
+          stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true })
+          stream.getVideoTracks().forEach(t => t.stop())
         }
       }
-
       streamRef.current = stream
-      
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4'
-      })
-      
-      mediaRecorderRef.current = mediaRecorder
+      const mr = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4' })
+      mediaRecorderRef.current = mr
 
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0 && socket && sessionIdRef.current) {
-          console.log('⚡ Audio chunk:', event.data.size, 'bytes')
+      mr.ondataavailable = e => {
+        if (e.data.size > 0 && socket && sessionIdRef.current) {
           const reader = new FileReader()
-          reader.onload = () => {
-            const base64 = (reader.result as string).split(',')[1]
-            socket.emit('audio:chunk', {
-              sessionId: sessionIdRef.current,
-              data: base64,
-              timestamp: Date.now(),
-              size: event.data.size
-            })
-          }
-          reader.readAsDataURL(event.data)
+          reader.onload = () => socket.emit('audio:chunk', { sessionId: sessionIdRef.current, data: (reader.result as string).split(',')[1], timestamp: Date.now(), size: e.data.size })
+          reader.readAsDataURL(e.data)
         }
       }
+      mr.onerror = () => setError('Recording error occurred')
 
-      mediaRecorder.onerror = (event) => {
-        setError('Recording error occurred')
-        console.error('MediaRecorder error:', event)
-      }
-
-      // Start session
-      console.log('📡 Emitting session:start event')
-      socket.emit('session:start', {
-        userId: currentUserId,
-        mode
-      })
-
-      socket.once('session:started', (data: any) => {
-        console.log('✅ Session started:', data.sessionId)
-        sessionIdRef.current = data.sessionId
-        mediaRecorder.start(1500) // 1.5 second chunks for faster processing
+      socket.emit('session:start', { userId: currentUserId, mode })
+      socket.once('session:started', (d: { sessionId: string }) => {
+        sessionIdRef.current = d.sessionId
+        mr.start(1500)
         setStatus('recording')
-        
-        intervalRef.current = setInterval(() => {
-          setDuration(prev => prev + 1)
-        }, 1000)
+        intervalRef.current = setInterval(() => setDuration(p => p + 1), 1000)
       })
-      
-      // Add timeout for session start
-      setTimeout(() => {
-        if (!sessionIdRef.current) {
-          setError('Session failed to start. Server may not be responding.')
-          console.error('❌ Session start timeout')
-        }
-      }, 10000)
-
-    } catch (err: any) {
-      setError(`Failed to access ${mode === 'mic' ? 'microphone' : 'tab audio'}: ${err.message}`)
-      console.error('Recording start error:', err)
+      setTimeout(() => { if (!sessionIdRef.current) setError('Session failed to start. Check backend.') }, 10000)
+    } catch (err: unknown) {
+      setError(`Failed to access ${mode === 'mic' ? 'microphone' : 'tab audio'}: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
-
-
 
   const pauseRecording = () => {
     if (mediaRecorderRef.current && status === 'recording') {
       mediaRecorderRef.current.pause()
       setStatus('paused')
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-      }
+      if (intervalRef.current) clearInterval(intervalRef.current)
       socket?.emit('session:pause', { sessionId: sessionIdRef.current })
     }
   }
@@ -210,9 +117,7 @@ export default function AudioRecorder() {
     if (mediaRecorderRef.current && status === 'paused') {
       mediaRecorderRef.current.resume()
       setStatus('recording')
-      intervalRef.current = setInterval(() => {
-        setDuration(prev => prev + 1)
-      }, 1000)
+      intervalRef.current = setInterval(() => setDuration(p => p + 1), 1000)
       socket?.emit('session:resume', { sessionId: sessionIdRef.current })
     }
   }
@@ -221,304 +126,166 @@ export default function AudioRecorder() {
     if (mediaRecorderRef.current && (status === 'recording' || status === 'paused')) {
       mediaRecorderRef.current.stop()
       setStatus('processing')
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-      }
+      if (intervalRef.current) clearInterval(intervalRef.current)
       socket?.emit('session:stop', { sessionId: sessionIdRef.current })
-      
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop())
-        streamRef.current = null
-      }
+      streamRef.current?.getTracks().forEach(t => t.stop())
+      streamRef.current = null
     }
   }
 
   const processVideo = async () => {
-    if (!videoFile || !socket || !isConnected) {
-      setError('Please select a video file and ensure connection')
-      return
-    }
-
-    // Validate file size (max 100MB)
-    const maxSizeInBytes = 100 * 1024 * 1024 // 100MB
-    if (videoFile.size > maxSizeInBytes) {
-      setError('Video file is too large. Please select a file smaller than 100MB.')
-      return
-    }
-
-    // Validate file type
+    if (!videoFile || !socket || !isConnected) { setError('Select a video file and ensure the server is connected'); return }
+    if (videoFile.size > 100 * 1024 * 1024) { setError('File too large (max 100MB)'); return }
     const validTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/avi', 'video/mov', 'video/wmv']
-    if (!validTypes.includes(videoFile.type)) {
-      setError('Please select a valid video file (MP4, WebM, OGG, AVI, MOV, WMV)')
-      return
-    }
+    if (!validTypes.includes(videoFile.type)) { setError('Unsupported format. Use MP4, WebM, OGG, AVI, MOV, or WMV'); return }
 
-    try {
-      setIsUploading(true)
-      setError('')
-      setTranscript('')
-      setStatus('processing')
-
-      // Start session for video processing
-      socket.emit('session:start', {
-        userId: currentUserId,
-        mode: 'video'
-      })
-
-      socket.once('session:started', async (data: any) => {
-        sessionIdRef.current = data.sessionId
-        
-        try {
-          // Convert video to base64 and send in chunks if large
-          const reader = new FileReader()
-          reader.onload = () => {
-            const base64 = (reader.result as string).split(',')[1]
-            socket.emit('video:upload', {
-              sessionId: sessionIdRef.current,
-              data: base64,
-              filename: videoFile.name,
-              fileSize: videoFile.size
-            })
-          }
-          reader.onerror = () => {
-            setError('Failed to read video file. Please try again.')
-            setIsUploading(false)
-            setStatus('idle')
-          }
-          reader.readAsDataURL(videoFile)
-        } catch (readerError) {
-          setError('Failed to process video file. Please try a different file.')
-          setIsUploading(false)
-          setStatus('idle')
-        }
-      })
-
-      // Add timeout for session start
-      setTimeout(() => {
-        if (isUploading && status === 'processing') {
-          setError('Video processing timeout. Please try again with a smaller file.')
-          setIsUploading(false)
-          setStatus('idle')
-        }
-      }, 300000) // 5 minute timeout
-
-    } catch (err: any) {
-      setError(`Video processing failed: ${err.message}`)
-      setIsUploading(false)
-      setStatus('idle')
-    }
+    setIsUploading(true); setError(''); setTranscript(''); setStatus('processing')
+    socket.emit('session:start', { userId: currentUserId, mode: 'video' })
+    socket.once('session:started', async (d: { sessionId: string }) => {
+      sessionIdRef.current = d.sessionId
+      const reader = new FileReader()
+      reader.onload = () => socket.emit('video:upload', { sessionId: sessionIdRef.current, data: (reader.result as string).split(',')[1], filename: videoFile.name, fileSize: videoFile.size })
+      reader.onerror = () => { setError('Failed to read video file'); setIsUploading(false); setStatus('idle') }
+      reader.readAsDataURL(videoFile)
+    })
   }
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-  }
+  const fmt = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`
+
+  const modeOptions = [
+    { value: 'mic', label: 'Microphone', icon: '🎤' },
+    { value: 'tab', label: 'Browser tab', icon: '🖥️' },
+    { value: 'video', label: 'Video file', icon: '🎬' },
+  ]
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <div className="bg-white rounded-lg shadow-lg p-6">
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Audio Recording</h2>
-          
-          {/* Mode Selection */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Recording Source
-            </label>
-            <select
-              value={mode}
-              onChange={(e) => setMode(e.target.value as RecordingMode)}
+    <div className="glass-strong" style={{ borderRadius: '20px', overflow: 'hidden', border: '1px solid var(--border2)' }}>
+      {/* Header bar */}
+      <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontWeight: '700', fontSize: '15px' }}>Recording studio</span>
+          <span className={`badge badge-${status}`}>
+            {status === 'recording' && <span className="rec-dot" />}
+            {status}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* Connection indicator */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: isConnected ? 'var(--green)' : 'var(--text3)' }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: isConnected ? 'var(--green)' : 'var(--text3)', boxShadow: isConnected ? '0 0 8px var(--green)' : 'none', display: 'block' }} />
+            {isConnected ? 'Connected' : 'Offline'}
+          </div>
+
+          {/* Timer */}
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: '20px', fontWeight: '700', color: status === 'recording' ? 'var(--red)' : 'var(--text2)', letterSpacing: '0.05em', minWidth: '60px' }}>
+            {fmt(duration)}
+          </span>
+        </div>
+      </div>
+
+      <div style={{ padding: '28px' }}>
+        {/* Mode selector */}
+        <div style={{ marginBottom: '24px' }}>
+          <p style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: '10px' }}>Source</p>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {modeOptions.map(m => (
+              <button key={m.value} onClick={() => setMode(m.value as RecordingMode)} disabled={status !== 'idle'}
+                style={{
+                  padding: '9px 18px', borderRadius: '10px', border: '1px solid', cursor: status === 'idle' ? 'pointer' : 'not-allowed', fontSize: '13px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s',
+                  background: mode === m.value ? 'rgba(79,142,255,0.15)' : 'transparent',
+                  borderColor: mode === m.value ? 'rgba(79,142,255,0.5)' : 'var(--border)',
+                  color: mode === m.value ? 'var(--accent2)' : 'var(--text2)',
+                }}>
+                {m.icon} {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Video upload */}
+        {mode === 'video' && (
+          <div style={{ marginBottom: '24px', padding: '16px', background: 'rgba(8,12,24,0.5)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <p style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: '10px' }}>Video file</p>
+            <input type="file" accept="video/mp4,video/webm,video/ogg,video/avi,video/mov,video/wmv"
+              onChange={e => setVideoFile(e.target.files?.[0] || null)}
               disabled={status !== 'idle'}
-              title="Select recording source"
-              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="mic">Microphone</option>
-              <option value="tab">Browser Tab</option>
-              <option value="video">Video Upload</option>
-            </select>
+              aria-label="Upload video file"
+              className="input-field"
+              style={{ padding: '8px 12px', cursor: 'pointer' }} />
+            {videoFile && (
+              <p style={{ fontSize: '12px', color: 'var(--text3)', marginTop: '8px' }}>
+                {videoFile.name} · {(videoFile.size / 1024 / 1024).toFixed(1)} MB
+              </p>
+            )}
           </div>
+        )}
 
-
-
-          {/* Video Upload */}
-          {mode === 'video' && (
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Upload Video File
-              </label>
-              <div className="space-y-2">
-                <input
-                  type="file"
-                  accept="video/mp4,video/webm,video/ogg,video/avi,video/mov,video/wmv"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] || null
-                    setVideoFile(file)
-                    if (file) {
-                      console.log('📁 Video file selected:', file.name, 'Size:', (file.size / 1024 / 1024).toFixed(2), 'MB')
-                    }
-                  }}
-                  disabled={status !== 'idle'}
-                  aria-label="Upload Video File"
-                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50"
-                />
-                {videoFile && (
-                  <div className="text-sm text-gray-600">
-                    <p><strong>File:</strong> {videoFile.name}</p>
-                    <p><strong>Size:</strong> {(videoFile.size / 1024 / 1024).toFixed(2)} MB</p>
-                    <p><strong>Type:</strong> {videoFile.type}</p>
-                  </div>
-                )}
-                <p className="text-xs text-gray-500">
-                  Supported formats: MP4, WebM, OGG, AVI, MOV, WMV (Max 100MB)
-                </p>
-              </div>
-            </div>
+        {/* Controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '24px', flexWrap: 'wrap' }}>
+          {status === 'idle' && mode !== 'video' && (
+            <button onClick={startRecording} disabled={!isConnected} className="btn-primary"
+              style={{ background: isConnected ? 'linear-gradient(135deg, #dc2626, #ef4444)' : undefined, boxShadow: isConnected ? '0 4px 20px rgba(239,68,68,0.3)' : undefined }}>
+              ● Start recording
+            </button>
           )}
-
-          {/* Recording Controls */}
-          <div className="flex items-center space-x-4 mb-6">
-            {status === 'idle' && mode !== 'video' && (
-              <button
-                onClick={startRecording}
-                disabled={!isConnected}
-                className={`px-6 py-3 rounded-full font-medium ${
-                  isConnected 
-                    ? 'bg-red-600 hover:bg-red-700 text-white cursor-pointer' 
-                    : 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                }`}
-              >
-                {isConnected ? 'Start Recording' : 'Connecting...'}
-              </button>
-            )}
-            
-            {status === 'idle' && mode === 'video' && (
-              <button
-                onClick={processVideo}
-                disabled={!videoFile || !isConnected || isUploading}
-                title={!videoFile ? 'Please select a video file' : !isConnected ? 'Not connected to server' : 'Process the selected video file'}
-                className={`px-6 py-3 rounded-full font-medium transition-colors ${
-                  videoFile && isConnected && !isUploading
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer' 
-                    : 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                }`}
-              >
-                {isUploading ? (
-                  <span className="flex items-center">
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Processing Video...
-                  </span>
-                ) : (
-                  '🎬 Process Video'
-                )}
-              </button>
-            )}
-            
-            {status === 'processing' && mode === 'video' && (
-              <div className="flex items-center space-x-2">
-                <svg className="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <span className="text-blue-600 font-medium">Processing video, please wait...</span>
-              </div>
-            )}
-            
-            {status === 'recording' && (
-              <>
-                <button
-                  onClick={pauseRecording}
-                  className="bg-yellow-600 hover:bg-yellow-700 text-white px-6 py-3 rounded-full font-medium"
-                >
-                  Pause
-                </button>
-                <button
-                  onClick={stopRecording}
-                  className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-full font-medium"
-                >
-                  End Recording
-                </button>
-              </>
-            )}
-            
-            {status === 'paused' && (
-              <>
-                <button
-                  onClick={resumeRecording}
-                  className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-full font-medium"
-                >
-                  Resume
-                </button>
-                <button
-                  onClick={stopRecording}
-                  className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-full font-medium"
-                >
-                  End Recording
-                </button>
-              </>
-            )}
-            
-
-
-            <div className="text-lg font-mono">
-              {formatTime(duration)}
-            </div>
-            
-            <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-              status === 'recording' ? 'bg-red-100 text-red-800' :
-              status === 'paused' ? 'bg-yellow-100 text-yellow-800' :
-              status === 'processing' ? 'bg-blue-100 text-blue-800' :
-              status === 'completed' ? 'bg-green-100 text-green-800' :
-              'bg-gray-100 text-gray-800'
-            }`}>
-              {status.charAt(0).toUpperCase() + status.slice(1)}
-            </div>
-          </div>
-
-          {error && (
-            <div className="mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-              {error}
+          {status === 'idle' && mode === 'video' && (
+            <button onClick={processVideo} disabled={!videoFile || !isConnected || isUploading} className="btn-primary">
+              {isUploading ? <><div className="spinner" style={{ width: '14px', height: '14px' }} /> Processing…</> : '🎬 Process video'}
+            </button>
+          )}
+          {status === 'recording' && (
+            <>
+              <button onClick={pauseRecording} className="btn-ghost">⏸ Pause</button>
+              <button onClick={stopRecording} className="btn-ghost">⏹ Stop</button>
+            </>
+          )}
+          {status === 'paused' && (
+            <>
+              <button onClick={resumeRecording} className="btn-primary">▶ Resume</button>
+              <button onClick={stopRecording} className="btn-ghost">⏹ Stop</button>
+            </>
+          )}
+          {status === 'recording' && (
+            <div className="waveform" style={{ marginLeft: '4px' }}>
+              {Array.from({ length: 7 }).map((_, i) => <div key={i} className="wave-bar" />)}
             </div>
           )}
         </div>
 
-        {/* Summary Display */}
-        <div className="border-t pt-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">
-            {status === 'completed' ? '⚡ Fast AI Summary' : 'Live Recording'}
-          </h3>
-          <div className="bg-gray-50 rounded-lg p-4 min-h-[200px] max-h-[400px] overflow-y-auto">
-            {status === 'processing' ? (
-              <div className="text-center">
-                <div className="inline-flex items-center px-4 py-2 font-semibold leading-6 text-sm shadow rounded-md text-blue-500 bg-blue-100 transition ease-in-out duration-150">
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  ⚡ High-speed processing with Gemini 2.0 Flash...
-                </div>
-                <p className="mt-2 text-sm text-gray-600">Optimized for sub-3 second generation</p>
+        {/* Error */}
+        {error && (
+          <div style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: '10px', padding: '12px 16px', marginBottom: '20px', color: '#f87171', fontSize: '13px', display: 'flex', gap: '8px' }}>
+            <span>⚠</span> {error}
+          </div>
+        )}
+
+        {/* Output area */}
+        <div>
+          <p style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: '10px' }}>
+            {status === 'completed' ? '⚡ AI summary' : status === 'recording' ? '🎤 Live transcript' : status === 'processing' ? '⏳ Processing' : 'Output'}
+          </p>
+          <div ref={transcriptRef} style={{ background: 'rgba(4,6,12,0.6)', borderRadius: '12px', border: '1px solid var(--border)', padding: '20px', minHeight: '180px', maxHeight: '360px', overflowY: 'auto' }}>
+            {status === 'processing' && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '140px', gap: '12px' }}>
+                <div className="spinner" style={{ width: '28px', height: '28px', borderWidth: '3px' }} />
+                <p style={{ color: 'var(--text3)', fontSize: '13px' }}>{videoProcessingMsg || 'Generating transcript and summary…'}</p>
               </div>
-            ) : status === 'completed' && transcript ? (
+            )}
+            {status === 'completed' && transcript && (
+              <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-body)', fontSize: '13px', color: 'var(--text2)', lineHeight: '1.75' }}>{transcript}</pre>
+            )}
+            {status === 'recording' && (
               <div>
-                <div className="mb-3 text-sm text-green-600 font-medium">✅ Generated with speed optimization</div>
-                <p className="text-gray-800 whitespace-pre-wrap">{transcript}</p>
-              </div>
-            ) : status === 'recording' ? (
-              <div>
-                <p className="text-green-600 italic mb-2">🎤 Recording in progress (Fast Mode)...</p>
-                {liveTranscript && (
-                  <div className="mt-4 p-3 bg-green-50 rounded border-l-4 border-green-400">
-                    <p className="text-sm font-medium text-green-800 mb-1">⚡ Live Transcript:</p>
-                    <p className="text-gray-700 whitespace-pre-wrap">{liveTranscript}</p>
-                  </div>
+                {liveTranscript ? (
+                  <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-body)', fontSize: '13px', color: 'var(--text2)', lineHeight: '1.75' }}>{liveTranscript}</pre>
+                ) : (
+                  <p style={{ color: 'var(--text3)', fontSize: '13px', fontStyle: 'italic' }}>Listening… speak clearly into your microphone.</p>
                 )}
               </div>
-            ) : (
-              <p className="text-gray-500 italic">⚡ Fast AI summary will appear here after recording...</p>
+            )}
+            {status === 'idle' && (
+              <p style={{ color: 'var(--text3)', fontSize: '13px', fontStyle: 'italic' }}>AI summary will appear here after recording.</p>
             )}
           </div>
         </div>
